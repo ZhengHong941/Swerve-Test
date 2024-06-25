@@ -17,10 +17,7 @@ void initialize() {
 }
 
 void disabled() {}
-
-
 void competition_initialize() {}
-
 
 void autonomous() {}
 
@@ -44,27 +41,22 @@ void opcontrol() {
 	pros::Motor rlB(Right_LowerB_motor);
 	while (true) {
 		turn = master.get_analog(ANALOG_RIGHT_X);
-
 		powerL = master.get_analog(ANALOG_LEFT_Y);
 		turnL = master.get_analog(ANALOG_LEFT_X);
-		upperL = turnL - powerL + turn;
+		upperL = turnL - powerL - turn;
 		lowerL = turnL + powerL + turn;
-
 		powerR = master.get_analog(ANALOG_LEFT_Y);
 		turnR = master.get_analog(ANALOG_LEFT_X);
-		upperR = turnR - powerR - turn;
+		upperR = turnR - powerR + turn;
 		lowerR = turnR + powerR - turn;
-
 		luA.move(upperL);
 		luB.move(upperL);
 		llA.move(lowerL);
 		llB.move(lowerL);
-
 		ruA.move(upperR);
 		ruB.move(upperR);
 		rlA.move(lowerR);
 		rlB.move(lowerR);
-		
 		pros::delay(2);
 	}
 }
