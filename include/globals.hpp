@@ -11,5 +11,10 @@
 #define Right_LowerA_motor 10
 #define Right_LowerB_motor 20
 
+#define Swerve_Rot_L 5
+#define Swerve_Rot_R 6
+
+#define SERIALPORT 15
+#define BAUDERATE 115200
 
 #endif

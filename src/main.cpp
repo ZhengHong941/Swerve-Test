@@ -4,6 +4,203 @@
 #include "pros/misc.h"
 #include "pros/motors.h"
 
+#include "pros/serial.h"
+#include "pros/serial.hpp"
+#include <sstream>	        //Include sstream for serial parsing
+#include <vector>
+
+//Prototypes for hidden vex functions to bypass PROS bug
+extern "C" int32_t vexGenericSerialReceive( uint32_t index, uint8_t *buffer, int32_t length );
+extern "C" void vexGenericSerialEnable(  uint32_t index, uint32_t nu );
+extern "C" void vexGenericSerialBaudrate(  uint32_t index, uint32_t rate );
+extern "C" int32_t vexGenericSerialTransmit( uint32_t index, uint8_t *buffer, int32_t length );
+
+double headingValue = 0;
+double distX = 0;
+double distY = 0;
+char msg[1] = {'R'};
+char msg2[1] = {'T'};
+char msg3[2] = {'W', 'B'};
+bool readSerial = true;
+bool imu_reset = false;
+
+void serialRead(void* params) {
+    pros::Controller master(pros::E_CONTROLLER_MASTER);
+
+    // Start serial on desired port
+    vexGenericSerialEnable(SERIALPORT - 1, 0);
+    
+    // Set BAUD rate
+    vexGenericSerialBaudrate(SERIALPORT - 1, 115200);
+    
+    // Let VEX OS configure port
+    pros::delay(10);
+    pros::screen::set_pen(COLOR_BLUE);
+    
+    // Serial message format:
+    // D[LIDAR DIST]I[IR DATA]A[GYRO ANGLE]E
+    // Example Message:
+    // D50.2I128A12.32E
+    bool toggle = false;
+    //pros::screen::print(TEXT_MEDIUM, 6, "TEST");
+    
+    imu_reset = true;
+    while (true) {
+        
+        // Buffer to store serial data
+        uint8_t buffer[256];
+        int len = 256;
+        
+        // Get serial data
+        int32_t nRead = vexGenericSerialReceive(SERIALPORT - 1, buffer, len);
+        //master.print(0,0,"%d",nRead);
+        // Now parse the data
+        if(master.get_digital(DIGITAL_Y) || imu_reset == true){
+            vexGenericSerialTransmit(SERIALPORT - 1, (uint8_t *)msg3, 2);
+            distX = 0;
+            distY = 0;
+            headingValue = 0;
+            readSerial = true;
+            imu_reset = false;
+            pros::delay(70);
+        }
+        
+        if (nRead >= 0 && readSerial) {
+            
+            // Stream to put the characters in
+            std::stringstream myStream("");
+            std::stringstream myStream2("");
+            std::stringstream myStream3("");
+            bool recordAngle = false;
+            bool recordOpticalX = false;
+            bool recordOpticalY = false;
+            
+            // Go through characters
+            for (int i = 0; i < nRead; i++) {
+                // Get current char
+                char thisDigit = (char)buffer[i];
+                
+                // If its special, then don't record the value
+                if (thisDigit == 'D' || thisDigit == 'I' || thisDigit == 'A' || thisDigit == 'X' || thisDigit == 'C' || thisDigit == 'Y' || thisDigit == 'D'){
+                    recordAngle = false;
+                    recordOpticalX = false;
+                    recordOpticalY = false;
+                }
+                
+                // Finished recieving angle, so put into variable
+                if (thisDigit == 'E') {
+                    recordAngle = false;
+                    myStream >> headingValue;
+                    pros::screen::print(TEXT_MEDIUM, 1, "[External IMU Heading]");
+                    pros::screen::print(TEXT_MEDIUM, 2, "Degrees: %.2lf", headingValue);
+                    //headingValue = 0;
+                    //master.print(0,0,"%f",headingValue);
+                    //pros::screen::print(TEXT_MEDIUM, 3, "%f", headingValue);
+                }
+
+                if (thisDigit == 'C'){
+                    recordOpticalX = false;
+                    myStream2 >> distX;
+                    //pros::screen::print(TEXT_LARGE, 3, "[Optical Flow]");
+                    pros::screen::print(TEXT_MEDIUM, 6, "distX: %.2lf", distX);
+                }
+
+                if (thisDigit == 'D'){
+                    recordOpticalY = false;
+                    myStream3 >> distY;
+                    pros::screen::print(TEXT_MEDIUM, 5, "[Optical Flow]");
+                    pros::screen::print(TEXT_MEDIUM, 7, "distY: %.2lf", (-distY));
+                }
+                
+                // If we want the digits, put them into stream
+                if (recordAngle)
+                    myStream << (char)buffer[i];
+                
+                if (recordOpticalX)
+                    myStream2 << (char)buffer[i];
+
+                if (recordOpticalY)
+                    myStream3 << (char)buffer[i];
+                
+                // If the digit is 'A', then the following data is the angle
+                if (thisDigit == 'A'){
+                    recordAngle = true;
+                }
+                
+                if (thisDigit == 'X')
+                    recordOpticalX = true;
+                
+                if (thisDigit == 'Y')
+                    recordOpticalY = true;
+                
+                //myStream >> headingValue;
+                //master.print(0,0,"%f",headingValue);
+                    
+                
+            }
+            
+        }
+    
+        // Delay to let serial data arrive
+        pros::delay(10);
+        //master.print(0, 6, "%.2lf", headingValue);
+        pros::Task::delay(15);
+        /*if(toggle){
+            vexGenericSerialTransmit(SERIALPORT - 1, (uint8_t *)msg, 1);
+            toggle = !toggle;
+        }
+        else if(!toggle){
+            vexGenericSerialTransmit(SERIALPORT - 1, (uint8_t *)msg2, 1);
+            toggle = !toggle;
+        }     */
+    }
+    
+}
+
+
+double powerLR, turnLR;
+double turn;
+
+void swerve_ctrl() {
+	// swerve motor
+	pros::Motor luA(Left_UpperA_motor);
+	pros::Motor luB(Left_UpperB_motor);
+	pros::Motor llA(Left_LowerA_motor);
+	pros::Motor llB(Left_LowerB_motor);
+	pros::Motor ruA(Right_UpperA_motor);
+	pros::Motor ruB(Right_UpperB_motor);
+	pros::Motor rlA(Right_LowerA_motor);
+	pros::Motor rlB(Right_LowerB_motor);
+	
+	pros::Rotation swerve_rotL(Swerve_Rot_L);
+	pros::Rotation swerve_rotR(Swerve_Rot_R);
+
+	double upperL, lowerL;
+	double upperR, lowerR;
+	double swerveL, swerveR;
+
+	while(true) {
+		
+		swerveL = swerve_rotL.get_angle();
+		swerveR = swerve_rotR.get_angle();
+
+		upperL = turnLR - powerLR;
+		lowerL = turnLR + powerLR;
+		upperR = turnLR - powerLR;
+		lowerR = turnLR + powerLR;
+		
+		luA.move(upperL);
+		luB.move(upperL);
+		llA.move(lowerL);
+		llB.move(lowerL);
+		ruA.move(upperR);
+		ruB.move(upperR);
+		rlA.move(lowerR);
+		rlB.move(lowerR);
+
+		pros::delay(2);
+	}
+}
 
 void initialize() {
 	pros::Motor luA(Left_UpperA_motor, pros::E_MOTOR_GEARSET_06, true, pros::E_MOTOR_ENCODER_DEGREES);
@@ -14,6 +211,12 @@ void initialize() {
 	pros::Motor ruB(Right_UpperB_motor, pros::E_MOTOR_GEARSET_06, true, pros::E_MOTOR_ENCODER_DEGREES);
 	pros::Motor rlA(Right_LowerA_motor, pros::E_MOTOR_GEARSET_06, false, pros::E_MOTOR_ENCODER_DEGREES);
 	pros::Motor rlB(Right_LowerB_motor, pros::E_MOTOR_GEARSET_06, false, pros::E_MOTOR_ENCODER_DEGREES);
+
+	pros::Serial serial(SERIALPORT);
+    int32_t serial_enable(SERIALPORT);
+    serial.set_baudrate(BAUDERATE);
+	pros::Task gyroTask(serialRead);
+	pros::Task swerve(swerve_ctrl);
 }
 
 void disabled() {}
@@ -21,13 +224,14 @@ void competition_initialize() {}
 
 void autonomous() {}
 
-bool tankdrive;
-double left, right;
-double upperL, lowerL;
-double upperR, lowerR;
-double powerL, turnL;
-double powerR, turnR;
-double turn;
+// bool tankdrive;
+// double left, right;
+// double upperL, lowerL;
+// double upperR, lowerR;
+// double powerLR, turnLR;
+// double powerL, turnL;
+// double powerR, turnR;
+// double turn;
 
 void opcontrol() {
 	pros::Controller master(pros::E_CONTROLLER_MASTER);
@@ -41,22 +245,22 @@ void opcontrol() {
 	pros::Motor rlB(Right_LowerB_motor);
 	while (true) {
 		turn = master.get_analog(ANALOG_RIGHT_X);
-		powerL = master.get_analog(ANALOG_LEFT_Y);
-		turnL = master.get_analog(ANALOG_LEFT_X);
-		upperL = turnL - powerL - turn;
-		lowerL = turnL + powerL + turn;
-		powerR = master.get_analog(ANALOG_LEFT_Y);
-		turnR = master.get_analog(ANALOG_LEFT_X);
-		upperR = turnR - powerR + turn;
-		lowerR = turnR + powerR - turn;
-		luA.move(upperL);
-		luB.move(upperL);
-		llA.move(lowerL);
-		llB.move(lowerL);
-		ruA.move(upperR);
-		ruB.move(upperR);
-		rlA.move(lowerR);
-		rlB.move(lowerR);
-		pros::delay(2);
+		powerLR = master.get_analog(ANALOG_LEFT_Y);
+		turnLR = master.get_analog(ANALOG_LEFT_X);
+		// upperL = turnL - powerL - turn;
+		// lowerL = turnL + powerL + turn;
+		// powerR = master.get_analog(ANALOG_LEFT_Y);
+		// turnR = master.get_analog(ANALOG_LEFT_X);
+		// upperR = turnR - powerR + turn;
+		// lowerR = turnR + powerR - turn;
+		// luA.move(upperL);
+		// luB.move(upperL);
+		// llA.move(lowerL);
+		// llB.move(lowerL);
+		// ruA.move(upperR);
+		// ruB.move(upperR);
+		// rlA.move(lowerR);
+		// rlB.move(lowerR);
+		// pros::delay(2);
 	}
 }
