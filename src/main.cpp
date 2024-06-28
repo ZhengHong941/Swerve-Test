@@ -158,8 +158,7 @@ void serialRead(void* params) {
 }
 
 
-double powerLR, turnLR;
-double turn;
+double swerve_power, turn, turnR;
 
 void swerve_ctrl() {
 	// swerve motor
@@ -177,18 +176,42 @@ void swerve_ctrl() {
 
 	double upperL, lowerL;
 	double upperR, lowerR;
-	double swerveL, swerveR;
+    double turnL;
+	double headingL, headingR;
+    double heading_errorL;
+    double total_heading_errorL;
+    double prev_heading_errorL;
+    double delta_heading_errorL;
+
+
+    // ensure that left swerve is following right swerve
 
 	while(true) {
-		
-		swerveL = swerve_rotL.get_angle();
-		swerveR = swerve_rotR.get_angle();
+		headingL = swerve_rotL.get_angle();
+		headingR = swerve_rotR.get_angle();
 
-		upperL = turnLR - powerLR;
-		lowerL = turnLR + powerLR;
-		upperR = turnLR - powerLR;
-		lowerR = turnLR + powerLR;
+        if ((headingL - headingR) > 180) {
+            headingL -= 360;
+        }
+        else if ((headingL - headingR) < -180) {
+            headingL += 360;
+        }
+
+        heading_errorL = headingR - headingL;
+        total_heading_errorL += heading_errorL;
+        delta_heading_errorL = heading_errorL - prev_heading_errorL;
+        prev_heading_errorL = heading_errorL;
+        
+        if (fabs(headingL - headingR) > 2) {
+            turnL = (swerve_kp * heading_errorL) + (swerve_ki * total_heading_errorL) + (swerve_kd * delta_heading_errorL);
+        }
+		upperL = turnL - swerve_power;
+		lowerL = turnL + swerve_power;
+		upperR = turnR - swerve_power;
+		lowerR = turnR + swerve_power;
 		
+        
+
 		luA.move(upperL);
 		luB.move(upperL);
 		llA.move(lowerL);
@@ -215,7 +238,7 @@ void initialize() {
 	pros::Serial serial(SERIALPORT);
     int32_t serial_enable(SERIALPORT);
     serial.set_baudrate(BAUDERATE);
-	pros::Task gyroTask(serialRead);
+	// pros::Task gyroTask(serialRead);
 	pros::Task swerve(swerve_ctrl);
 }
 
@@ -223,15 +246,6 @@ void disabled() {}
 void competition_initialize() {}
 
 void autonomous() {}
-
-// bool tankdrive;
-// double left, right;
-// double upperL, lowerL;
-// double upperR, lowerR;
-// double powerLR, turnLR;
-// double powerL, turnL;
-// double powerR, turnR;
-// double turn;
 
 void opcontrol() {
 	pros::Controller master(pros::E_CONTROLLER_MASTER);
@@ -243,24 +257,15 @@ void opcontrol() {
 	pros::Motor ruB(Right_UpperB_motor);
 	pros::Motor rlA(Right_LowerA_motor);
 	pros::Motor rlB(Right_LowerB_motor);
-	while (true) {
+    double turnR;
+    
+    while (true) {
 		turn = master.get_analog(ANALOG_RIGHT_X);
-		powerLR = master.get_analog(ANALOG_LEFT_Y);
-		turnLR = master.get_analog(ANALOG_LEFT_X);
-		// upperL = turnL - powerL - turn;
-		// lowerL = turnL + powerL + turn;
-		// powerR = master.get_analog(ANALOG_LEFT_Y);
-		// turnR = master.get_analog(ANALOG_LEFT_X);
-		// upperR = turnR - powerR + turn;
-		// lowerR = turnR + powerR - turn;
-		// luA.move(upperL);
-		// luB.move(upperL);
-		// llA.move(lowerL);
-		// llB.move(lowerL);
-		// ruA.move(upperR);
-		// ruB.move(upperR);
-		// rlA.move(lowerR);
-		// rlB.move(lowerR);
-		// pros::delay(2);
+		swerve_power = master.get_analog(ANALOG_LEFT_Y);
+		// turnL = master.get_analog(ANALOG_LEFT_X);
+        turnR = master.get_analog(ANALOG_LEFT_X);
+        
+
+		pros::delay(2);
 	}
 }
